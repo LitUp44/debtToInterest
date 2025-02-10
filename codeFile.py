@@ -42,19 +42,11 @@ st.markdown("""
 This tool will help you determine the optimal payment strategy for your debt and investment savings. You can input as many debts and investments as you like, and then adjust the balance between debt repayment and savings to see the impact over time.
 """)
 
-# User-defined available monthly payment
+# Step 1: Amount available for debt/savings
 total_income = st.number_input("Total Available Monthly Payment", min_value=0.0, value=500.0, step=10.0)
 
-# Slider to allocate funds
-slider_value = st.slider("Percentage of Available Funds to Allocate to Debt", min_value=0, max_value=100, value=50)
-debt_payment = total_income * (slider_value / 100)
-investment_payment = total_income * ((100 - slider_value) / 100)
-
-st.write(f"Debt Allocation: ${debt_payment:.2f} per month")
-st.write(f"Investment Allocation: ${investment_payment:.2f} per month")
-
-# Debt Inputs
-st.header("Debt Inputs")
+# Step 2: Debt and investment input
+st.header("Enter Your Debts")
 debt_list = []
 num_debts = st.number_input("How many debts do you want to enter?", min_value=1, max_value=10, value=1)
 
@@ -67,22 +59,7 @@ for i in range(num_debts):
     
     debt_list.append((amount, interest_rate, start_date, min_payment))
 
-# Calculate Debt Results
-debt_results = []
-for debt in debt_list:
-    payback_date, total_principal, total_interest, years = calculate_debt_payback(*debt)
-    debt_results.append({
-        "Payback Date": payback_date,
-        "Principal Paid": total_principal,
-        "Interest Paid": total_interest,
-        "Years to Pay Off": years
-    })
-
-debt_df = pd.DataFrame(debt_results)
-st.write(debt_df)
-
-# Investment Inputs
-st.header("Investment / Savings Inputs")
+st.header("Enter Your Investments/Savings")
 investment_list = []
 num_investments = st.number_input("How many investments do you want to enter?", min_value=1, max_value=10, value=1)
 
@@ -94,44 +71,57 @@ for i in range(num_investments):
     
     investment_list.append((starting_amount, expected_return, monthly_payment))
 
-# Calculate Investment Results
+# Step 3: Optimizing where to put money (Debt vs Investment)
+slider_value = st.slider("Percentage of Available Funds to Allocate to Debt", min_value=0, max_value=100, value=50)
+debt_payment = total_income * (slider_value / 100)
+investment_payment = total_income * ((100 - slider_value) / 100)
+
+st.write(f"Debt Allocation: ${debt_payment:.2f} per month")
+st.write(f"Investment Allocation: ${investment_payment:.2f} per month")
+
+# Step 4: Calculate Debt Results
+debt_results = []
+for debt in debt_list:
+    payback_date, total_principal, total_interest, years = calculate_debt_payback(*debt)
+    debt_results.append({
+        "Debt Amount": debt[0],
+        "Recommended Payment": debt_payment,
+        "Payback Date": payback_date,
+        "Interest Paid": total_interest,
+        "Years to Pay Off": years
+    })
+
+# Step 5: Calculate Investment Results
 investment_results = []
 for investment in investment_list:
     future_value, return_amount = calculate_investment_value(*investment)
     investment_results.append({
-        "Future Value after 5 Years": future_value,
+        "Investment Amount": investment[0],
         "Total Contributions": investment[0] + investment[2] * 12 * 5,
-        "Return after 5 Years": return_amount
+        "Future Value": future_value,
+        "Return After 5 Years": return_amount
     })
 
+# Step 6: Results Table
+debt_df = pd.DataFrame(debt_results)
 investment_df = pd.DataFrame(investment_results)
+
+st.subheader("Debt Results")
+st.write(debt_df)
+
+st.subheader("Investment Results")
 st.write(investment_df)
 
-# Interest vs Investment Calculation
-st.header("Interest Payments vs Expected Return")
-interest_vs_return_results = []
-for i, debt in enumerate(debt_list):
-    debt_amount, debt_interest, _, debt_min_payment = debt
-    debt_interest_monthly = debt_amount * (debt_interest / 12 / 100)
-    
-    for investment in investment_list:
-        investment_start, investment_return, _ = investment
-        investment_monthly_rate = investment_return / 12 / 100
-        investment_expected_return = investment_start * (1 + investment_monthly_rate)
-        
-        # Check if interest equals investment return
-        if debt_interest_monthly >= investment_expected_return:
-            interest_vs_return_results.append({
-                "Debt": f"Debt {i+1}",
-                "Investment": f"Investment {i+1}",
-                "Time when Interest == Return": f"At time {i+1} months"
-            })
-        else:
-            interest_vs_return_results.append({
-                "Debt": f"Debt {i+1}",
-                "Investment": f"Investment {i+1}",
-                "Explanation": "Interest payments will theoretically always be smaller than the market return. Therefore, paying minimums may be the best course of action."
-            })
+# Step 7: Net Worth Calculation
+st.header("Net Worth Calculation")
+total_debt = sum([debt[0] for debt in debt_list])  # Sum of all debt amounts
+total_investment = sum([investment[0] for investment in investment_list])  # Sum of all investment amounts
+total_savings = sum([investment[2] * 12 * 5 for investment in investment_list])  # Total savings over 5 years
 
-interest_vs_return_df = pd.DataFrame(interest_vs_return_results)
-st.write(interest_vs_return_df)
+net_worth = total_investment + total_savings - total_debt
+st.write(f"Your Total Net Worth: ${net_worth:.2f}")
+
+# Step 8: Change Date for Net Worth
+net_worth_date = st.date_input("Select Date for Net Worth", value=datetime.today())
+st.write(f"Net Worth as of {net_worth_date}: ${net_worth:.2f}")
+
