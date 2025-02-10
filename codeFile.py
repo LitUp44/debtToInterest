@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 import numpy as np
 
-# Function to calculate debt payback date and principal vs interest breakdown
+# Function to calculate debt payback in years and principal vs interest breakdown
 def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
     monthly_rate = interest_rate / 12 / 100
     months = 0
@@ -19,8 +19,10 @@ def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
         total_principal += principal_payment
         months += 1
     
+    # Convert months to years
+    years = months / 12
     payback_date = start_date + pd.DateOffset(months=months)
-    return payback_date, total_principal, total_interest, months
+    return payback_date, total_principal, total_interest, years
 
 # Function to calculate future value of investment/savings
 def calculate_investment_value(starting_amount, expected_return, monthly_payment, years=5):
@@ -40,6 +42,17 @@ st.markdown("""
 This tool will help you determine the optimal payment strategy for your debt and investment savings. You can input as many debts and investments as you like, and then adjust the balance between debt repayment and savings to see the impact over time.
 """)
 
+# User-defined available monthly payment
+total_income = st.number_input("Total Available Monthly Payment", min_value=0.0, value=500.0, step=10.0)
+
+# Slider to allocate funds
+slider_value = st.slider("Percentage of Available Funds to Allocate to Debt", min_value=0, max_value=100, value=50)
+debt_payment = total_income * (slider_value / 100)
+investment_payment = total_income * ((100 - slider_value) / 100)
+
+st.write(f"Debt Allocation: ${debt_payment:.2f} per month")
+st.write(f"Investment Allocation: ${investment_payment:.2f} per month")
+
 # Debt Inputs
 st.header("Debt Inputs")
 debt_list = []
@@ -57,12 +70,12 @@ for i in range(num_debts):
 # Calculate Debt Results
 debt_results = []
 for debt in debt_list:
-    payback_date, total_principal, total_interest, months = calculate_debt_payback(*debt)
+    payback_date, total_principal, total_interest, years = calculate_debt_payback(*debt)
     debt_results.append({
         "Payback Date": payback_date,
         "Principal Paid": total_principal,
         "Interest Paid": total_interest,
-        "Months to Pay Off": months
+        "Years to Pay Off": years
     })
 
 debt_df = pd.DataFrame(debt_results)
@@ -94,26 +107,31 @@ for investment in investment_list:
 investment_df = pd.DataFrame(investment_results)
 st.write(investment_df)
 
-# Interactive Slider for Adjusting Money Between Debt and Investment
-st.header("Adjust Payment Strategy Between Debt and Investment")
-total_income = st.number_input("Total Available Monthly Payment", min_value=0.0, value=500.0, step=10.0)
+# Interest vs Investment Calculation
+st.header("Interest Payments vs Expected Return")
+interest_vs_return_results = []
+for i, debt in enumerate(debt_list):
+    debt_amount, debt_interest, _, debt_min_payment = debt
+    debt_interest_monthly = debt_amount * (debt_interest / 12 / 100)
+    
+    for investment in investment_list:
+        investment_start, investment_return, _ = investment
+        investment_monthly_rate = investment_return / 12 / 100
+        investment_expected_return = investment_start * (1 + investment_monthly_rate)
+        
+        # Check if interest equals investment return
+        if debt_interest_monthly >= investment_expected_return:
+            interest_vs_return_results.append({
+                "Debt": f"Debt {i+1}",
+                "Investment": f"Investment {i+1}",
+                "Time when Interest == Return": f"At time {i+1} months"
+            })
+        else:
+            interest_vs_return_results.append({
+                "Debt": f"Debt {i+1}",
+                "Investment": f"Investment {i+1}",
+                "Explanation": "Interest payments will theoretically always be smaller than the market return. Therefore, paying minimums may be the best course of action."
+            })
 
-# Slider to allocate funds
-debt_percentage = st.slider("Percentage of Available Funds to Allocate to Debt", min_value=0, max_value=100, value=50)
-investment_percentage = 100 - debt_percentage
-
-debt_payment = total_income * (debt_percentage / 100)
-investment_payment = total_income * (investment_percentage / 100)
-
-st.write(f"Debt Allocation: ${debt_payment:.2f} per month")
-st.write(f"Investment Allocation: ${investment_payment:.2f} per month")
-
-# Recalculate results based on new allocations (you could adjust this logic depending on how you'd like to handle payments)
-debt_payment_updated = st.number_input("Updated Debt Payment", value=debt_payment)
-investment_payment_updated = st.number_input("Updated Investment Payment", value=investment_payment)
-
-st.write(f"Updated Debt Payment: ${debt_payment_updated:.2f}")
-st.write(f"Updated Investment Payment: ${investment_payment_updated:.2f}")
-
-# Add more advanced calculations as needed
-
+interest_vs_return_df = pd.DataFrame(interest_vs_return_results)
+st.write(interest_vs_return_df)
