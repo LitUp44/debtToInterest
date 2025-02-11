@@ -42,35 +42,28 @@ st.markdown("""
 This tool will help you determine the optimal payment strategy for your debt and investment savings. You can input as many debts and investments as you like, and then adjust the balance between debt repayment and savings to see the impact over time.
 """)
 
-# Step 1: Amount available for debt/savings (Fixed as the first input)
-total_income = st.number_input("Total Available Monthly Payment", min_value=0.0, value=500.0, step=10.0)
-
-# Step 2: Debt and investment input from side panel
+# Side panel for debt and investment entry
 with st.sidebar:
-    st.header("Add Debts")
+    st.header("Add New Debt")
     debt_list = []
-    num_debts = st.number_input("How many debts do you want to enter?", min_value=1, max_value=10, value=1)
-
-    for i in range(num_debts):
-        amount = st.number_input(f"Debt Amount {i+1}", min_value=0.0, value=1000.0, step=100.0)
-        interest_rate = st.number_input(f"Interest Rate for Debt {i+1} (%)", min_value=0.0, value=5.0)
-        start_date = st.date_input(f"Payment Start Date for Debt {i+1}", value=datetime.today())
-        min_payment = st.number_input(f"Minimum Payment for Debt {i+1}", min_value=0.0, value=50.0, step=10.0)
+    if st.button("Add New Debt"):
+        amount = st.number_input(f"Debt Amount", min_value=0.0, value=1000.0, step=100.0)
+        interest_rate = st.number_input(f"Interest Rate for Debt (%)", min_value=0.0, value=5.0)
+        start_date = st.date_input(f"Payment Start Date for Debt", value=datetime.today())
+        min_payment = st.number_input(f"Minimum Payment for Debt", min_value=0.0, value=50.0, step=10.0)
         
         debt_list.append((amount, interest_rate, start_date, min_payment))
-
-    st.header("Add Investments/Savings")
+    
+    st.header("Add New Investment")
     investment_list = []
-    num_investments = st.number_input("How many investments do you want to enter?", min_value=1, max_value=10, value=1)
-
-    for i in range(num_investments):
-        starting_amount = st.number_input(f"Starting Amount for Investment {i+1}", min_value=0.0, value=1000.0, step=100.0)
-        expected_return = st.number_input(f"Expected Return for Investment {i+1} (%)", min_value=0.0, value=6.0)
-        monthly_payment = st.number_input(f"Monthly Payment for Investment {i+1}", min_value=0.0, value=100.0, step=10.0)
+    if st.button("Add New Investment"):
+        starting_amount = st.number_input(f"Starting Amount for Investment", min_value=0.0, value=1000.0, step=100.0)
+        expected_return = st.number_input(f"Expected Return for Investment (%)", min_value=0.0, value=6.0)
+        monthly_payment = st.number_input(f"Monthly Payment for Investment", min_value=0.0, value=100.0, step=10.0)
         
         investment_list.append((starting_amount, expected_return, monthly_payment))
 
-# Step 3: Show Debts and Investments Tables
+# Step 3: Show Debts and Investments Tables with Updated Payments
 st.header("Debts")
 debt_results = []
 for debt in debt_list:
@@ -86,6 +79,12 @@ for debt in debt_list:
 debt_df = pd.DataFrame(debt_results)
 st.write(debt_df)
 
+# Add editable payments to each debt
+st.header("Edit Monthly Payments for Debts")
+for i, debt in enumerate(debt_list):
+    debt_payment = st.number_input(f"Debt {i+1} Monthly Contribution", min_value=0.0, value=debt[3], step=10.0)
+    debt_list[i] = (debt[0], debt[1], debt[2], debt_payment)  # Update with new value
+
 st.header("Investments/Savings")
 investment_results = []
 for investment in investment_list:
@@ -100,17 +99,13 @@ for investment in investment_list:
 investment_df = pd.DataFrame(investment_results)
 st.write(investment_df)
 
-# Step 4: User Input for Adjusting Monthly Contributions (Main Page)
-st.header("Adjust Monthly Contributions")
-for i, debt in enumerate(debt_list):
-    debt_payment = st.number_input(f"Debt {i+1} Monthly Contribution", min_value=0.0, value=debt[3], step=10.0)
-    debt_list[i] = (debt[0], debt[1], debt[2], debt_payment)  # Update with new value
-
+# Add editable payments to each investment
+st.header("Edit Monthly Contributions for Investments")
 for i, investment in enumerate(investment_list):
     investment_payment = st.number_input(f"Investment {i+1} Monthly Contribution", min_value=0.0, value=investment[2], step=10.0)
     investment_list[i] = (investment[0], investment[1], investment_payment)  # Update with new value
 
-# Step 5: Future Value Calculation
+# Step 5: Future Value Calculation (Combining Investments and Debts)
 st.header("Future Value Calculation")
 future_years = st.number_input("Enter number of years for future value calculation", min_value=1, value=5)
 total_debt = sum([debt[0] for debt in debt_list])  # Sum of all debt amounts
@@ -129,6 +124,5 @@ for investment in investment_list:
 combined_future_value -= total_debt  # Subtract debt from the combined future value
 
 st.write(f"Combined Future Value (Investments - Debts) after {future_years} years: ${combined_future_value:.2f}")
-
 
 
