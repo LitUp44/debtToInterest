@@ -1,9 +1,9 @@
 import streamlit as st
-import pandas as pd
 from datetime import datetime
 import numpy as np
 
-# Function to calculate debt payback in years and principal vs interest breakdown
+# Cache expensive functions to optimize startup time
+@st.cache
 def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
     monthly_rate = interest_rate / 12 / 100
     months = 0
@@ -19,12 +19,11 @@ def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
         total_principal += principal_payment
         months += 1
     
-    # Convert months to years
     years = months / 12
     payback_date = start_date + pd.DateOffset(months=months)
     return payback_date, total_principal, total_interest, years
 
-# Function to calculate future value of investment/savings
+@st.cache
 def calculate_investment_value(starting_amount, expected_return, monthly_payment, years=5):
     months = years * 12
     monthly_rate = expected_return / 12 / 100
@@ -36,7 +35,7 @@ def calculate_investment_value(starting_amount, expected_return, monthly_payment
     total_contributions = monthly_payment * months + starting_amount
     return future_value, future_value - total_contributions
 
-# Initialize session state for debts and investments
+# Initialize session state for debts and investments (only store essential data)
 if 'debt_list' not in st.session_state:
     st.session_state.debt_list = []
 
@@ -58,8 +57,9 @@ with st.sidebar:
         start_date = st.date_input(f"Payment Start Date for Debt", value=datetime.today())
         min_payment = st.number_input(f"Minimum Payment for Debt", min_value=0.0, value=50.0, step=10.0)
         
-        # Add to session state
-        st.session_state.debt_list.append((amount, interest_rate, start_date, min_payment))
+        # Add to session state only if valid input
+        if amount > 0 and min_payment > 0:
+            st.session_state.debt_list.append((amount, interest_rate, start_date, min_payment))
 
     st.header("Add New Investment")
     if st.button("Add New Investment"):
@@ -67,8 +67,9 @@ with st.sidebar:
         expected_return = st.number_input(f"Expected Return for Investment (%)", min_value=0.0, value=6.0)
         monthly_payment = st.number_input(f"Monthly Payment for Investment", min_value=0.0, value=100.0, step=10.0)
         
-        # Add to session state
-        st.session_state.investment_list.append((starting_amount, expected_return, monthly_payment))
+        # Add to session state only if valid input
+        if starting_amount > 0 and monthly_payment > 0:
+            st.session_state.investment_list.append((starting_amount, expected_return, monthly_payment))
 
 # Step 2: Show Debts and Investments Tables with Updated Payments
 st.header("Debts")
