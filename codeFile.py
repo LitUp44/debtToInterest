@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 
 # Cache expensive functions to optimize startup time
-@st.cache
+@st.cache_data
 def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
     monthly_rate = interest_rate / 12 / 100
     months = 0
@@ -23,7 +23,7 @@ def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
     payback_date = start_date + pd.DateOffset(months=months)
     return payback_date, total_principal, total_interest, years
 
-@st.cache
+@st.cache_data
 def calculate_investment_value(starting_amount, expected_return, monthly_payment, years=5):
     months = years * 12
     monthly_rate = expected_return / 12 / 100
