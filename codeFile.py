@@ -1,9 +1,10 @@
 import streamlit as st
+import pandas as pd  # Add pandas import here
 from datetime import datetime
 import numpy as np
 
 # Cache expensive functions to optimize startup time
-@st.cache_data
+@st.cache
 def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
     monthly_rate = interest_rate / 12 / 100
     months = 0
@@ -20,10 +21,10 @@ def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
         months += 1
     
     years = months / 12
-    payback_date = start_date + pd.DateOffset(months=months)
+    payback_date = start_date + pd.DateOffset(months=months)  # Use pd.DateOffset here
     return payback_date, total_principal, total_interest, years
 
-@st.cache_data
+@st.cache
 def calculate_investment_value(starting_amount, expected_return, monthly_payment, years=5):
     months = years * 12
     monthly_rate = expected_return / 12 / 100
@@ -132,5 +133,6 @@ for investment in st.session_state.investment_list:
 combined_future_value -= total_debt  # Subtract debt from the combined future value
 
 st.write(f"Combined Future Value (Investments - Debts) after {future_years} years: ${combined_future_value:.2f}")
+
 
 
