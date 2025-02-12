@@ -133,4 +133,3 @@ combined_future_value -= total_debt  # Subtract debt from the combined future va
 st.write(f"Combined Future Value (Investments - Debts) after {future_years} years: ${combined_future_value:.2f}")
 
 
-
