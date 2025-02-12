@@ -1,11 +1,11 @@
 import streamlit as st
-import pandas as pd  # Add pandas import here
 from datetime import datetime
 import numpy as np
 
 # Cache expensive functions to optimize startup time
 @st.cache
 def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
+    import pandas as pd  # Lazy import to avoid at startup
     monthly_rate = interest_rate / 12 / 100
     months = 0
     total_interest = 0
@@ -133,6 +133,7 @@ for investment in st.session_state.investment_list:
 combined_future_value -= total_debt  # Subtract debt from the combined future value
 
 st.write(f"Combined Future Value (Investments - Debts) after {future_years} years: ${combined_future_value:.2f}")
+
 
 
 
