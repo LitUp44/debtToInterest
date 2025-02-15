@@ -1,151 +1,214 @@
 import streamlit as st
-import pandas as pd  # Global import
-from datetime import datetime
+import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
+import altair as alt
 
-# Cache expensive functions to optimize startup time
-@st.cache
-def calculate_debt_payback(principal, interest_rate, start_date, min_payment):
-    monthly_rate = interest_rate / 12 / 100
+# =============================================================================
+# Helper functions
+# =============================================================================
+def calculate_payoff_months(amount, annual_interest_rate, payment):
+    """
+    Simulate month-by-month payoff of a debt.
+    Returns the number of months required to pay off the debt.
+    If payment is too low to ever pay off the debt, returns None.
+    """
+    monthly_rate = annual_interest_rate / 100 / 12
+    balance = amount
     months = 0
-    total_interest = 0
-    total_principal = 0
-    remaining_balance = principal
-    
-    while remaining_balance > 0:
-        interest_payment = remaining_balance * monthly_rate
-        principal_payment = min_payment - interest_payment
-        remaining_balance -= principal_payment
-        total_interest += interest_payment
-        total_principal += principal_payment
+
+    # if payment does not cover the monthly interest, the balance will never decline
+    if payment <= balance * monthly_rate:
+        return None
+
+    while balance > 0 and months < 1000:  # safeguard against infinite loops
+        balance = balance * (1 + monthly_rate) - payment
         months += 1
+    return months
+
+def remaining_balance(amount, annual_interest_rate, payment, months):
+    """
+    Calculate remaining balance on a debt after a given number of months.
+    If the debt is paid off before the horizon, returns 0.
+    """
+    monthly_rate = annual_interest_rate / 100 / 12
+    balance = amount
+    for m in range(months):
+        # if the payment is not even covering the interest, break out
+        if payment <= balance * monthly_rate:
+            break
+        balance = balance * (1 + monthly_rate) - payment
+        if balance <= 0:
+            return 0
+    return max(balance, 0)
+
+def future_value(current_amount, monthly_contribution, annual_return_rate, months):
+    """
+    Calculate the future value of an investment with monthly contributions.
+    """
+    r = annual_return_rate / 100 / 12
+    if r != 0:
+        fv = current_amount * (1 + r) ** months + monthly_contribution * (((1 + r) ** months - 1) / r)
+    else:
+        fv = current_amount + monthly_contribution * months
+    return fv
+
+def net_worth_over_time(debts, investments, horizon_months):
+    """
+    Create a DataFrame tracking net worth (investments minus remaining debt)
+    for each month up to the given horizon.
+    """
+    months = list(range(horizon_months + 1))
+    net_worth = []
+    total_debt_series = []
+    total_investment_series = []
     
-    years = months / 12
-    payback_date = start_date + pd.DateOffset(months=months)
-    return payback_date, total_principal, total_interest, years
+    for m in months:
+        # Sum remaining balances for each debt at month m
+        total_debt = 0
+        for debt in debts:
+            rem = remaining_balance(
+                debt["Amount Owed"], 
+                debt["Interest Rate"], 
+                debt["Current Payment"], 
+                m
+            )
+            total_debt += rem
+        
+        # Sum future values for each investment at month m
+        total_investment = 0
+        for inv in investments:
+            fv = future_value(
+                inv["Current Amount"],
+                inv["Monthly Contribution"],
+                inv["Return Rate"],
+                m
+            )
+            total_investment += fv
 
-@st.cache
-def calculate_investment_value(starting_amount, expected_return, monthly_payment, years=5):
-    months = years * 12
-    monthly_rate = expected_return / 12 / 100
-    future_value = starting_amount
-    for _ in range(months):
-        future_value *= (1 + monthly_rate)
-        future_value += monthly_payment
+        net_worth.append(total_investment - total_debt)
+        total_debt_series.append(total_debt)
+        total_investment_series.append(total_investment)
     
-    total_contributions = monthly_payment * months + starting_amount
-    return future_value, future_value - total_contributions
-
-# Initialize session state for debts and investments (only store essential data)
-if 'debt_list' not in st.session_state:
-    st.session_state.debt_list = []
-
-if 'investment_list' not in st.session_state:
-    st.session_state.investment_list = []
-
-# Title and instructions
-st.title("Debt to Investment/Saving Calculator")
-st.markdown("""
-This tool will help you determine the optimal payment strategy for your debt and investment savings. 
-You can input as many debts and investments as you like, and then adjust the balance between debt repayment 
-and savings to see the impact over time.
-""")
-
-# Side panel for adding new debts and investments
-with st.sidebar:
-    st.header("Add New Debt")
-    if st.button("Add New Debt"):
-        amount = st.number_input("Debt Amount", min_value=0.0, value=1000.0, step=100.0)
-        interest_rate = st.number_input("Interest Rate for Debt (%)", min_value=0.0, value=5.0)
-        start_date = st.date_input("Payment Start Date for Debt", value=datetime.today())
-        min_payment = st.number_input("Minimum Payment for Debt", min_value=0.0, value=50.0, step=10.0)
-        
-        # Add to session state only if valid input
-        if amount > 0 and min_payment > 0:
-            st.session_state.debt_list.append((amount, interest_rate, start_date, min_payment))
-
-    st.header("Add New Investment")
-    if st.button("Add New Investment"):
-        starting_amount = st.number_input("Starting Amount for Investment", min_value=0.0, value=1000.0, step=100.0)
-        expected_return = st.number_input("Expected Return for Investment (%)", min_value=0.0, value=6.0)
-        monthly_payment = st.number_input("Monthly Payment for Investment", min_value=0.0, value=100.0, step=10.0)
-        
-        # Add to session state only if valid input
-        if starting_amount > 0 and monthly_payment > 0:
-            st.session_state.investment_list.append((starting_amount, expected_return, monthly_payment))
-
-# Step 2: Show Debts and Investments Tables with Updated Payments
-st.header("Debts")
-debt_results = []
-for i, debt in enumerate(st.session_state.debt_list):
-    payback_date, total_principal, total_interest, years = calculate_debt_payback(*debt)
-    debt_results.append({
-        "Debt Amount": debt[0],
-        "Recommended Payment": debt[3],  # Monthly minimum payment
-        "Payback Date": payback_date,
-        "Interest Paid": total_interest,
-        "Years to Pay Off": years,
-        "Actions": f"Edit/Delete {i+1}"  # Add Edit/Delete button text
+    df = pd.DataFrame({
+        "Month": months,
+        "Net Worth": net_worth,
+        "Total Debt": total_debt_series,
+        "Total Investments": total_investment_series
     })
+    return df
 
-# Display the table
-debt_df = pd.DataFrame(debt_results)
-st.write(debt_df)
+# =============================================================================
+# Initialize session state for storing debts and investments
+# =============================================================================
+if "debts" not in st.session_state:
+    st.session_state.debts = []
+if "investments" not in st.session_state:
+    st.session_state.investments = []
 
-# Edit/Delete functionality for debts
-for i, debt in enumerate(st.session_state.debt_list):
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button(f"Edit Debt {i+1}"):
-            new_amount = st.number_input(f"New Amount for Debt {i+1}", value=debt[0])
-            new_interest_rate = st.number_input(f"New Interest Rate for Debt {i+1} (%)", value=debt[1])
-            new_min_payment = st.number_input(f"New Minimum Payment for Debt {i+1}", value=debt[3])
-            new_start_date = st.date_input(f"New Payment Start Date for Debt {i+1}", value=debt[2])
-            
-            if new_amount > 0 and new_min_payment > 0:
-                st.session_state.debt_list[i] = (new_amount, new_interest_rate, new_start_date, new_min_payment)
-                st.success(f"Debt {i+1} updated successfully!")
+# =============================================================================
+# Sidebar inputs for Debts and Investments
+# =============================================================================
+st.sidebar.title("Manage Your Finances")
 
-    with col2:
-        if st.button(f"Delete Debt {i+1}"):
-            del st.session_state.debt_list[i]
-            st.success(f"Debt {i+1} deleted successfully!")
-            break  # Break to re-render after deleting
+# ----- Add Debt -----
+st.sidebar.header("Add a Debt")
+with st.sidebar.form("debt_form", clear_on_submit=True):
+    debt_name = st.text_input("Debt Name", key="debt_name")
+    amount_owed = st.number_input("Amount Owed", min_value=0.0, value=0.0, key="amount_owed")
+    interest_rate = st.number_input("Interest Rate (%)", min_value=0.0, value=0.0, key="interest_rate")
+    min_payment = st.number_input("Minimum Payment", min_value=0.0, value=0.0, key="min_payment")
+    current_payment = st.number_input("Current Payment", min_value=0.0, value=0.0, key="current_payment")
+    add_debt = st.form_submit_button("Add Debt")
+    if add_debt:
+        st.session_state.debts.append({
+            "Debt Name": debt_name,
+            "Amount Owed": amount_owed,
+            "Interest Rate": interest_rate,
+            "Minimum Payment": min_payment,
+            "Current Payment": current_payment
+        })
+        st.sidebar.success(f"Debt '{debt_name}' added!")
 
-st.header("Investments/Savings")
-investment_results = []
-for i, investment in enumerate(st.session_state.investment_list):
-    future_value, return_amount = calculate_investment_value(*investment)
-    investment_results.append({
-        "Investment Amount": investment[0],
-        "Total Contributions": investment[0] + investment[2] * 12 * 5,
-        "Future Value": future_value,
-        "Return After 5 Years": return_amount,
-        "Actions": f"Edit/Delete {i+1}"  # Add Edit/Delete button text
-    })
+# ----- Add Investment / Savings -----
+st.sidebar.header("Add an Investment / Savings")
+with st.sidebar.form("investment_form", clear_on_submit=True):
+    invest_name = st.text_input("Investment Name", key="invest_name")
+    current_amount = st.number_input("Current Amount", min_value=0.0, value=0.0, key="current_amount")
+    monthly_contribution = st.number_input("Monthly Contribution", min_value=0.0, value=0.0, key="monthly_contribution")
+    return_rate = st.number_input("Return Rate (%)", min_value=0.0, value=0.0, key="return_rate")
+    add_inv = st.form_submit_button("Add Investment")
+    if add_inv:
+        st.session_state.investments.append({
+            "Investment Name": invest_name,
+            "Current Amount": current_amount,
+            "Monthly Contribution": monthly_contribution,
+            "Return Rate": return_rate
+        })
+        st.sidebar.success(f"Investment '{invest_name}' added!")
 
-# Display the table
-investment_df = pd.DataFrame(investment_results)
-st.write(investment_df)
+# =============================================================================
+# Main Page: Display Data and Calculations
+# =============================================================================
+st.title("Debt vs. Investment Optimization Calculator")
 
-# Edit/Delete functionality for investments
-for i, investment in enumerate(st.session_state.investment_list):
-    col1, col2 = st.columns([1, 1])
-    with col1:
-        if st.button(f"Edit Investment {i+1}"):
-            new_starting_amount = st.number_input(f"New Starting Amount for Investment {i+1}", value=investment[0])
-            new_expected_return = st.number_input(f"New Expected Return for Investment {i+1} (%)", value=investment[1])
-            new_monthly_payment = st.number_input(f"New Monthly Payment for Investment {i+1}", value=investment[2])
-            
-            if new_starting_amount > 0 and new_monthly_payment > 0:
-                st.session_state.investment_list[i] = (new_starting_amount, new_expected_return, new_monthly_payment)
-                st.success(f"Investment {i+1} updated successfully!")
+if not st.session_state.debts and not st.session_state.investments:
+    st.info("Please add some debts and/or investments using the sidebar.")
+else:
+    # ----- Editable Tables for Debts and Investments -----
+    if st.session_state.debts:
+        st.subheader("Debts Overview")
+        debts_df = pd.DataFrame(st.session_state.debts)
+        # Calculate payoff months and estimated payoff date for each debt
+        payoff_info = []
+        for idx, row in debts_df.iterrows():
+            months = calculate_payoff_months(row["Amount Owed"], row["Interest Rate"], row["Current Payment"])
+            if months is None:
+                payoff_date = "Never (Payment too low)"
+            else:
+                payoff_date = (datetime.today() + timedelta(days=30 * months)).strftime("%Y-%m")
+            payoff_info.append(payoff_date)
+        debts_df["Estimated Payoff Date"] = payoff_info
 
-    with col2:
-        if st.button(f"Delete Investment {i+1}"):
-            del st.session_state.investment_list[i]
-            st.success(f"Investment {i+1} deleted successfully!")
-            break  # Break to re-render after deleting
+        edited_debts = st.experimental_data_editor(debts_df, num_rows="dynamic", key="debts_editor")
+        # Update session state if the user edits the table
+        st.session_state.debts = edited_debts.to_dict(orient="records")
 
-# Future Value calculation remains the same...
+    if st.session_state.investments:
+        st.subheader("Investments / Savings Overview")
+        inv_df = pd.DataFrame(st.session_state.investments)
+        edited_investments = st.experimental_data_editor(inv_df, num_rows="dynamic", key="investments_editor")
+        st.session_state.investments = edited_investments.to_dict(orient="records")
+
+    # ----- Net Worth and Strategy Calculation -----
+    st.subheader("Net Worth Projection")
+    horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
+
+    projection_df = net_worth_over_time(st.session_state.debts, st.session_state.investments, int(horizon_months))
+    st.line_chart(projection_df.set_index("Month")[["Net Worth", "Total Debt", "Total Investments"]])
+
+    # Display net worth at the end of the horizon
+    final_net_worth = projection_df.iloc[-1]["Net Worth"]
+    st.write(f"**Projected Net Worth after {horizon_months} months:** ${final_net_worth:,.2f}")
+
+    # ----- Provide a Basic Strategy Recommendation -----
+    st.subheader("Strategy Recommendation")
+    if st.session_state.debts and st.session_state.investments:
+        highest_debt_interest = max(debt["Interest Rate"] for debt in st.session_state.debts)
+        avg_inv_return = np.mean([inv["Return Rate"] for inv in st.session_state.investments])
+        if highest_debt_interest > avg_inv_return:
+            st.info(
+                f"Your highest debt interest rate ({highest_debt_interest:.2f}%) exceeds "
+                f"your average investment return ({avg_inv_return:.2f}%). Consider focusing on paying off your debt faster."
+            )
+        else:
+            st.info(
+                f"Your investment returns ({avg_inv_return:.2f}%) are competitive with your debt interest rates "
+                f"({highest_debt_interest:.2f}%). A balanced approach of investing while meeting debt obligations might be optimal."
+            )
+    elif st.session_state.debts:
+        st.info("You only have debts. Prioritize debt repayment!")
+    elif st.session_state.investments:
+        st.info("You only have investments. Continue contributing to your investments!")
+
 
