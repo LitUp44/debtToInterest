@@ -170,14 +170,14 @@ else:
             payoff_info.append(payoff_date)
         debts_df["Estimated Payoff Date"] = payoff_info
 
-        edited_debts = st.experimental_data_editor(debts_df, num_rows="dynamic", key="debts_editor")
+        edited_debts = st.data_editor(debts_df, num_rows="dynamic", key="debts_editor")
         # Update session state if the user edits the table
         st.session_state.debts = edited_debts.to_dict(orient="records")
 
     if st.session_state.investments:
         st.subheader("Investments / Savings Overview")
         inv_df = pd.DataFrame(st.session_state.investments)
-        edited_investments = st.experimental_data_editor(inv_df, num_rows="dynamic", key="investments_editor")
+        edited_investments = st.data_editor(inv_df, num_rows="dynamic", key="investments_editor")
         st.session_state.investments = edited_investments.to_dict(orient="records")
 
     # ----- Net Worth and Strategy Calculation -----
