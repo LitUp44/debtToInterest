@@ -194,7 +194,7 @@ else:
                 with col2:
                     if st.button("Edit Debt", key=f"edit_debt_{i}"):
                         st.session_state.editing_debt_index = i
-                        st.experimental_rerun()  # Rerun to prepopulate the sidebar form
+                        st.rerun()  # Rerun to prepopulate the sidebar form
 
     # =============================================================================
     # Investments Overview (Editable table remains as before)
@@ -202,7 +202,7 @@ else:
     if st.session_state.investments:
         st.subheader("Investments / Savings Overview")
         inv_df = pd.DataFrame(st.session_state.investments)
-        edited_inv_df = st.experimental_data_editor(inv_df, num_rows="dynamic", key="investments_editor")
+        edited_inv_df = st.data_editor(inv_df, num_rows="dynamic", key="investments_editor")
         st.session_state.investments = edited_inv_df.to_dict(orient="records")
 
     # =============================================================================
