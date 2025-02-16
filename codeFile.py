@@ -53,8 +53,11 @@ def future_value(current_amount, monthly_contribution, annual_return_rate, month
 
 def net_worth_over_time(debts, investments, horizon_months):
     """
-    Create a DataFrame tracking net worth (investments minus remaining debt)
-    for each month up to the given horizon.
+    Create a DataFrame tracking net worth over time.
+
+    **Modifications:**
+    - The total debt is converted to a negative number so that it shows up as a liability.
+    - Net worth is calculated as Total Investments + (Total Debt), where Total Debt is negative.
     """
     months = list(range(horizon_months + 1))
     net_worth = []
@@ -62,17 +65,21 @@ def net_worth_over_time(debts, investments, horizon_months):
     total_investment_series = []
     
     for m in months:
-        total_debt = sum(
+        # Calculate the outstanding debt (as a positive number)
+        debt_value = sum(
             remaining_balance(debt["Amount Owed"], debt["Interest Rate"], debt["Current Payment"], m)
             for debt in debts
         )
+        # Multiply by -1 so debt appears as a negative value
+        displayed_debt = -debt_value
         total_investment = sum(
             future_value(inv["Current Amount"], inv["Monthly Contribution"], inv["Return Rate"], m)
             for inv in investments
         )
-        net_worth.append(total_investment - total_debt)
-        total_debt_series.append(total_debt)
+        total_debt_series.append(displayed_debt)
         total_investment_series.append(total_investment)
+        # Net worth is assets plus liabilities (liabilities are negative)
+        net_worth.append(total_investment + displayed_debt)
     
     df = pd.DataFrame({
         "Month": months,
@@ -194,7 +201,7 @@ if inv_submitted:
         st.sidebar.success(f"Investment '{invest_name}' added!")
 
 # =============================================================================
-# Main Page: Display Debts in Table Format with an Edit Button per Row
+# Main Page: Display Debts and Investments in Table Format with Edit Buttons
 # =============================================================================
 st.title("Debt vs. Investment Optimization Calculator")
 
@@ -256,7 +263,13 @@ else:
     st.subheader("Net Worth Projection")
     horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
     projection_df = net_worth_over_time(st.session_state.debts, st.session_state.investments, int(horizon_months))
+    
+    # The chart now shows:
+    # - "Total Investments" (assets)
+    # - "Total Debt" (as negative values)
+    # - "Net Worth" (Investments + Debt)
     st.line_chart(projection_df.set_index("Month")[["Net Worth", "Total Debt", "Total Investments"]])
+    
     final_net_worth = projection_df.iloc[-1]["Net Worth"]
     st.write(f"**Projected Net Worth after {horizon_months} months:** ${final_net_worth:,.2f}")
 
@@ -278,6 +291,7 @@ else:
         st.info("You only have debts. Prioritize debt repayment!")
     elif st.session_state.investments:
         st.info("You only have investments. Continue contributing to your investments!")
+
 
 
 
