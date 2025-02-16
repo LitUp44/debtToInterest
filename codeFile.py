@@ -50,66 +50,94 @@ def future_value(current_amount, monthly_contribution, annual_return_rate, month
 # =============================================================================
 # Simulation Function: Iterative Month-by-Month Calculation
 # =============================================================================
-def simulate_finances(debts, explicit_investments, default_investment_initial, monthly_budget, horizon_months, default_return_rate=7.0):
+def simulate_finances(debts, explicit_investments, monthly_budget, debt_allocation, horizon_months, default_return_rate=7.0):
     """
-    Simulate your finances over time using your debts, your explicit investments,
-    and a default investment category that receives any leftover cash each month.
+    Simulate finances over time with:
+      - monthly_budget: total funds available each month.
+      - debt_allocation: the portion of monthly_budget to pay debts.
+      - investment_allocation = monthly_budget - debt_allocation goes to the default investment.
     
     For each month:
-      - Each active debt is updated with interest and a fixed payment.
-      - The sum of required payments for active debts is subtracted from your monthly budget.
-      - Any remaining funds are contributed to the default investment.
-      - Explicit investments are calculated using a closed-form formula.
-    
-    Returns a DataFrame with the net worth, total (negative) debt, total investments,
-    and a breakdown of default and explicit investments.
+      1. Distribute the debt_allocation among all active debts:
+         - First, pay each active debt its minimum payment.
+         - If debt_allocation < total minimum payments, scale each proportionally.
+         - Otherwise, pay the minimums and allocate any extra to debts in order of highest interest rate.
+      2. Update each debt’s balance with accrued interest.
+      3. Add the investment_allocation to the default investment (with monthly compounding at default_return_rate).
+      4. Compute explicit investments using a closed-form future value calculation.
+      5. Compute total investments and net worth.
     """
-    # Initialize debt balances (one per debt)
+    # Initialize debt balances and parameters
     debt_balances = [d["Amount Owed"] for d in debts]
-    debt_interest_rates = [d["Interest Rate"]/100/12 for d in debts]  # monthly interest rates
-    debt_payments = [d["Current Payment"] for d in debts]
-    
-    # Initialize the default investment balance
-    default_balance = default_investment_initial
+    debt_min_payments = [d["Minimum Payment"] for d in debts]
+    debt_interest_rates = [d["Interest Rate"]/100/12 for d in debts]  # monthly rates
+
+    # Default investment starts at 0 now.
+    default_balance = 0.0
 
     simulation = []
     for m in range(horizon_months + 1):
-        # Total outstanding debt (as a positive number)
+        # --- Debt Payment Allocation ---
+        # Identify active debts (those with a positive balance)
+        active_indices = [i for i, bal in enumerate(debt_balances) if bal > 0]
+        total_min = sum(debt_min_payments[i] for i in active_indices)
+        
+        # Determine payments for each debt this month.
+        payments = [0.0] * len(debt_balances)
+        if active_indices:
+            if debt_allocation < total_min:
+                # Not enough to cover minimums: scale payments proportionally.
+                for i in active_indices:
+                    payments[i] = debt_min_payments[i] * (debt_allocation / total_min)
+            else:
+                # First, assign each debt its minimum payment.
+                for i in active_indices:
+                    payments[i] = debt_min_payments[i]
+                extra = debt_allocation - total_min
+                # Allocate extra money to active debts in order of descending interest rate.
+                sorted_active = sorted(active_indices, key=lambda i: debts[i]["Interest Rate"], reverse=True)
+                for i in sorted_active:
+                    if extra <= 0:
+                        break
+                    # Calculate the payment needed to pay off the debt this month.
+                    payment_needed = debt_balances[i] * (1 + debt_interest_rates[i])
+                    extra_needed = max(payment_needed - payments[i], 0)
+                    extra_payment = min(extra, extra_needed)
+                    payments[i] += extra_payment
+                    extra -= extra_payment
+
+        # --- Update Debt Balances ---
+        for i in range(len(debt_balances)):
+            if debt_balances[i] > 0:
+                new_balance = debt_balances[i] * (1 + debt_interest_rates[i]) - payments[i]
+                debt_balances[i] = max(new_balance, 0)
+        
         total_debt = sum(debt_balances)
-        # Sum of required payments for debts that are still active
-        active_debt_payment = sum(payment if balance > 0 else 0 
-                                  for balance, payment in zip(debt_balances, debt_payments))
         
-        # For month 0, no monthly contribution is added yet.
-        if m > 0:
-            # Funds left from the monthly budget after paying active debts:
-            default_contribution = max(monthly_budget - active_debt_payment, 0)
-            # Update default investment balance using compound interest on a monthly basis.
-            default_balance = default_balance * (1 + default_return_rate/100/12) + default_contribution
-        
-        # Compute the total value of all explicit investments using the fixed formula.
-        explicit_total = 0
+        # --- Default Investment Update ---
+        investment_allocation = monthly_budget - debt_allocation
+        if m > 0:  # At month 0, no contribution yet.
+            default_balance = default_balance * (1 + default_return_rate/100/12) + investment_allocation
+
+        # --- Explicit Investments ---
+        explicit_total = 0.0
         for inv in explicit_investments:
+            # Use the closed-form future value for explicit investments.
             explicit_total += future_value(inv["Current Amount"], inv["Monthly Contribution"], inv["Return Rate"], m)
         
         total_investments = default_balance + explicit_total
-        net_worth = total_investments - total_debt  # Debt is a liability
-        
+        net_worth = total_investments - total_debt  # Debts are liabilities
+
         simulation.append({
             "Month": m,
             "Net Worth": net_worth,
-            "Total Debt": -total_debt,  # shown as negative
+            "Total Debt": -total_debt,  # Shown as negative
             "Total Investments": total_investments,
             "Default Investment": default_balance,
             "Explicit Investments": explicit_total,
-            "Debt Payments": active_debt_payment
+            "Debt Payments": sum(payments)
         })
-        
-        # Update each debt balance for the next month.
-        for i in range(len(debt_balances)):
-            if debt_balances[i] > 0:
-                new_balance = debt_balances[i] * (1 + debt_interest_rates[i]) - debt_payments[i]
-                debt_balances[i] = max(new_balance, 0)
+
     return pd.DataFrame(simulation)
 
 # =============================================================================
@@ -125,14 +153,23 @@ if "editing_investment_index" not in st.session_state:
     st.session_state.editing_investment_index = None
 
 # =============================================================================
-# Sidebar Inputs for Debts, Investments, and Cash Flow Parameters
+# Sidebar Inputs: Monthly Budget, Debt/Investment Allocation, and Financial Details
 # =============================================================================
 st.sidebar.title("Manage Your Finances")
 
-# ---- Cash Flow Parameters ----
-st.sidebar.subheader("Budget & Savings")
-monthly_budget = st.sidebar.number_input("Monthly Budget for Debt & Investing", min_value=0.0, value=2000.0, step=100.0)
-default_investment_initial = st.sidebar.number_input("Initial Savings for Default Investment", min_value=0.0, value=5000.0, step=100.0)
+# ---- Monthly Budget ----
+monthly_budget = st.sidebar.number_input("Monthly Available Funds", min_value=0.0, value=2000.0, step=100.0)
+
+# ---- Slider: Allocate Funds to Debt vs. Investments ----
+# This slider determines how much of the monthly_budget goes to debt payments.
+debt_allocation = st.sidebar.slider(
+    "Monthly Allocation to Debt Payment",
+    min_value=0.0,
+    max_value=monthly_budget,
+    value=monthly_budget/2,
+    step=100.0
+)
+st.sidebar.write(f"Debt Payment: ${debt_allocation:,.2f} | Investment Contribution: ${monthly_budget - debt_allocation:,.2f}")
 
 # ---- Debt Input / Edit Form ----
 st.sidebar.header("Debt Details")
@@ -144,7 +181,7 @@ if st.session_state.editing_debt_index is not None:
     default_amount_owed = debt_record["Amount Owed"]
     default_interest_rate = debt_record["Interest Rate"]
     default_min_payment = debt_record["Minimum Payment"]
-    default_current_payment = debt_record["Current Payment"]
+    # "Current Payment" field is now not used because the slider controls allocation.
     debt_form_title = "Edit Debt"
     debt_submit_label = "Save Changes"
 else:
@@ -153,7 +190,6 @@ else:
     default_amount_owed = 0.0
     default_interest_rate = 0.0
     default_min_payment = 0.0
-    default_current_payment = 0.0
     debt_form_title = "Add Debt"
     debt_submit_label = "Add Debt"
 
@@ -163,7 +199,6 @@ with st.sidebar.form("debt_form", clear_on_submit=True):
     amount_owed = st.number_input("Amount Owed", min_value=0.0, value=default_amount_owed, key="amount_owed_input")
     interest_rate = st.number_input("Interest Rate (%)", min_value=0.0, value=default_interest_rate, key="interest_rate_input")
     min_payment = st.number_input("Minimum Payment", min_value=0.0, value=default_min_payment, key="min_payment_input")
-    current_payment = st.number_input("Current Payment", min_value=0.0, value=default_current_payment, key="current_payment_input")
     debt_submitted = st.form_submit_button(debt_submit_label)
 
 if debt_submitted:
@@ -171,8 +206,7 @@ if debt_submitted:
         "Debt Name": debt_name,
         "Amount Owed": amount_owed,
         "Interest Rate": interest_rate,
-        "Minimum Payment": min_payment,
-        "Current Payment": current_payment
+        "Minimum Payment": min_payment
     }
     if debt_mode == "edit":
         st.session_state.debts[st.session_state.editing_debt_index] = new_debt
@@ -182,7 +216,7 @@ if debt_submitted:
         st.session_state.debts.append(new_debt)
         st.sidebar.success(f"Debt '{debt_name}' added!")
 
-# ---- Investment Input / Edit Form for Explicit Investments ----
+# ---- Explicit Investment Input / Edit Form ----
 st.sidebar.header("Explicit Investment / Savings Details")
 if st.session_state.editing_investment_index is not None:
     inv_mode = "edit"
@@ -237,17 +271,16 @@ else:
     # --- Debts Table ---
     if st.session_state.debts:
         st.subheader("Debts Overview")
-        debt_header_cols = st.columns([1, 2, 2, 2, 2, 2, 2])
+        debt_header_cols = st.columns([1, 2, 2, 2, 2, 2])
         debt_header_cols[0].markdown("**Action**")
         debt_header_cols[1].markdown("**Debt Name**")
         debt_header_cols[2].markdown("**Amount Owed**")
         debt_header_cols[3].markdown("**Interest Rate**")
         debt_header_cols[4].markdown("**Min Payment**")
-        debt_header_cols[5].markdown("**Current Payment**")
-        debt_header_cols[6].markdown("**Estimated Payoff Date**")
+        debt_header_cols[5].markdown("**Optimal Payoff (Est.)**")
         
         for i, debt in enumerate(st.session_state.debts):
-            debt_row_cols = st.columns([1, 2, 2, 2, 2, 2, 2])
+            debt_row_cols = st.columns([1, 2, 2, 2, 2, 2])
             if debt_row_cols[0].button("Edit", key=f"edit_debt_{i}"):
                 st.session_state.editing_debt_index = i
                 st.rerun()
@@ -255,13 +288,12 @@ else:
             debt_row_cols[2].write(f"${debt['Amount Owed']:,}")
             debt_row_cols[3].write(f"{debt['Interest Rate']}%")
             debt_row_cols[4].write(f"${debt['Minimum Payment']:,}")
-            debt_row_cols[5].write(f"${debt['Current Payment']:,}")
-            months = calculate_payoff_months(debt["Amount Owed"], debt["Interest Rate"], debt["Current Payment"])
+            months = calculate_payoff_months(debt["Amount Owed"], debt["Interest Rate"], debt["Minimum Payment"])
             if months is None:
-                payoff_date = "Never (Payment too low)"
+                payoff_date = "N/A"
             else:
                 payoff_date = (datetime.today() + timedelta(days=30 * months)).strftime("%Y-%m")
-            debt_row_cols[6].write(payoff_date)
+            debt_row_cols[5].write(payoff_date)
     
     # --- Explicit Investments Table ---
     if st.session_state.investments:
@@ -289,14 +321,14 @@ else:
     st.subheader("Net Worth Projection & Cash Flow Simulation")
     horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
     
-    # Exclude any explicit investment named "Default Investment" (if one exists)
-    explicit_investments = [inv for inv in st.session_state.investments if inv["Investment Name"] != "Default Investment"]
+    # For explicit investments, include all entries as added by the user.
+    explicit_investments = st.session_state.investments.copy()
     
     sim_df = simulate_finances(
         debts=st.session_state.debts,
         explicit_investments=explicit_investments,
-        default_investment_initial=default_investment_initial,
         monthly_budget=monthly_budget,
+        debt_allocation=debt_allocation,
         horizon_months=int(horizon_months),
         default_return_rate=7.0
     )
@@ -306,14 +338,13 @@ else:
     st.write(f"**Projected Net Worth after {horizon_months} months:** ${final_net_worth:,.2f}")
     
     # -----------------------------------------------------------------------------
-    # Display the initial simulation row so the user can see the breakdown of the
-    # default investment (and other components) that forms the basis of the graph.
+    # Display the initial simulation row (Month 0) so the user can see the breakdown.
     # -----------------------------------------------------------------------------
     with st.expander("View Initial Financial Breakdown (Month 0)"):
         st.markdown(
-            "This row shows your starting point. The **Default Investment** is your initial savings (which earns a 7% annual return). "
-            "As you pay down debts, any funds not required for minimum payments are added to this default investment, "
-            "and that is reflected in the **Total Investments** value."
+            "This row shows your starting point. The **Default Investment** starts at $0 and each month receives "
+            "the funds allocated to investments (i.e. Monthly Available Funds minus Debt Payment Allocation). "
+            "As you adjust the slider for debt payments, notice how the contribution to the default investment changes."
         )
         initial_row = sim_df[sim_df["Month"] == 0]
         st.table(initial_row)
@@ -322,26 +353,24 @@ else:
     # Optimal Payoff Strategy Recommendation
     # =============================================================================
     st.subheader("Optimal Payoff Strategy")
-    if st.session_state.debts and explicit_investments:
-        # Identify the debt with the highest interest rate
+    if st.session_state.debts:
+        # Identify the highest interest rate among active debts.
         highest_debt = max(st.session_state.debts, key=lambda x: x["Interest Rate"])
         highest_debt_interest = highest_debt["Interest Rate"]
-        avg_inv_return = np.mean([inv["Return Rate"] for inv in explicit_investments])
-        
-        if avg_inv_return > highest_debt_interest:
+        # Compare the highest debt interest rate with the default investment return (7%)
+        if highest_debt_interest > 7:
             st.info(
-                f"Your average return on your explicit investments is {avg_inv_return:.2f}% which is higher than your highest debt interest rate ({highest_debt_interest:.2f}%).\n\n"
-                "It may be optimal to pay only the minimum on your debts and invest extra funds."
+                f"Your highest debt interest rate is {highest_debt_interest:.2f}% which exceeds the default investment return (7%).\n\n"
+                "It may be optimal to allocate more funds toward paying off your debts."
             )
         else:
             st.info(
-                f"Your highest debt interest rate is {highest_debt_interest:.2f}% which is higher than your average explicit investment return ({avg_inv_return:.2f}%).\n\n"
-                f"Consider focusing extra payments on your '{highest_debt['Debt Name']}' debt to pay it off quickly; then that freed-up cash can flow into your default investment."
+                f"Your highest debt interest rate is {highest_debt_interest:.2f}% which is below or similar to the default investment return (7%).\n\n"
+                "You might consider investing more of your available funds."
             )
-    elif st.session_state.debts:
-        st.info("You only have debts. Prioritize paying them off!")
-    elif explicit_investments:
-        st.info("You only have explicit investments. Continue contributing!")
+    else:
+        st.info("No debts have been added, so your funds go entirely to investments.")
+
 
 
 
