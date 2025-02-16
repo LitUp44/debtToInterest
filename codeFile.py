@@ -284,12 +284,12 @@ else:
             inv_row_cols[4].write(f"{inv['Return Rate']}%")
     
     # =============================================================================
-    # Net Worth Projection & Financial Simulation
+    # Financial Simulation: Net Worth Projection & Cash Flow
     # =============================================================================
     st.subheader("Net Worth Projection & Cash Flow Simulation")
     horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
     
-    # Separate explicit investments from the default (if any explicit investment is named "Default Investment", ignore it)
+    # Exclude any explicit investment named "Default Investment" (if one exists)
     explicit_investments = [inv for inv in st.session_state.investments if inv["Investment Name"] != "Default Investment"]
     
     sim_df = simulate_finances(
@@ -304,6 +304,19 @@ else:
     st.line_chart(sim_df.set_index("Month")[["Net Worth", "Total Debt", "Total Investments"]])
     final_net_worth = sim_df.iloc[-1]["Net Worth"]
     st.write(f"**Projected Net Worth after {horizon_months} months:** ${final_net_worth:,.2f}")
+    
+    # -----------------------------------------------------------------------------
+    # Display the initial simulation row so the user can see the breakdown of the
+    # default investment (and other components) that forms the basis of the graph.
+    # -----------------------------------------------------------------------------
+    with st.expander("View Initial Financial Breakdown (Month 0)"):
+        st.markdown(
+            "This row shows your starting point. The **Default Investment** is your initial savings (which earns a 7% annual return). "
+            "As you pay down debts, any funds not required for minimum payments are added to this default investment, "
+            "and that is reflected in the **Total Investments** value."
+        )
+        initial_row = sim_df[sim_df["Month"] == 0]
+        st.table(initial_row)
     
     # =============================================================================
     # Optimal Payoff Strategy Recommendation
@@ -329,6 +342,7 @@ else:
         st.info("You only have debts. Prioritize paying them off!")
     elif explicit_investments:
         st.info("You only have explicit investments. Continue contributing!")
+
 
 
 
