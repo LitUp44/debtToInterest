@@ -155,36 +155,43 @@ st.title("Debt vs. Investment Optimization Calculator")
 if not st.session_state.debts and not st.session_state.investments:
     st.info("Please add some debts and/or investments using the sidebar.")
 else:
-    # ----- Editable Tables for Debts and Investments -----
+    # ----- Editable Table for Debts (raw data) -----
     if st.session_state.debts:
-        st.subheader("Debts Overview")
-        debts_df = pd.DataFrame(st.session_state.debts)
-        # Calculate payoff months and estimated payoff date for each debt
+        st.subheader("Debts Overview (Editable)")
+        # Only allow editing of the raw input columns
+        editable_columns = ["Debt Name", "Amount Owed", "Interest Rate", "Minimum Payment", "Current Payment"]
+        debt_df = pd.DataFrame(st.session_state.debts)[editable_columns]
+        edited_debt_df = st.data_editor(debt_df, num_rows="dynamic", key="debts_editor")
+        # Update session state with edited values
+        st.session_state.debts = edited_debt_df.to_dict(orient="records")
+        
+        # Create a display table with calculated payoff dates (read-only)
         payoff_info = []
-        for idx, row in debts_df.iterrows():
+        for idx, row in edited_debt_df.iterrows():
             months = calculate_payoff_months(row["Amount Owed"], row["Interest Rate"], row["Current Payment"])
             if months is None:
                 payoff_date = "Never (Payment too low)"
             else:
                 payoff_date = (datetime.today() + timedelta(days=30 * months)).strftime("%Y-%m")
             payoff_info.append(payoff_date)
-        debts_df["Estimated Payoff Date"] = payoff_info
+        display_debt_df = edited_debt_df.copy()
+        display_debt_df["Estimated Payoff Date"] = payoff_info
+        st.write("### Debts with Estimated Payoff Dates")
+        st.dataframe(display_debt_df)
 
-        edited_debts = st.data_editor(debts_df, num_rows="dynamic", key="debts_editor")
-        # Update session state if the user edits the table
-        st.session_state.debts = edited_debts.to_dict(orient="records")
-
+    # ----- Editable Table for Investments -----
     if st.session_state.investments:
-        st.subheader("Investments / Savings Overview")
+        st.subheader("Investments / Savings Overview (Editable)")
         inv_df = pd.DataFrame(st.session_state.investments)
-        edited_investments = st.data_editor(inv_df, num_rows="dynamic", key="investments_editor")
-        st.session_state.investments = edited_investments.to_dict(orient="records")
+        edited_inv_df = st.data_editor(inv_df, num_rows="dynamic", key="investments_editor")
+        st.session_state.investments = edited_inv_df.to_dict(orient="records")
 
     # ----- Net Worth and Strategy Calculation -----
     st.subheader("Net Worth Projection")
     horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
-
     projection_df = net_worth_over_time(st.session_state.debts, st.session_state.investments, int(horizon_months))
+    
+    # Plot using line_chart
     st.line_chart(projection_df.set_index("Month")[["Net Worth", "Total Debt", "Total Investments"]])
 
     # Display net worth at the end of the horizon
