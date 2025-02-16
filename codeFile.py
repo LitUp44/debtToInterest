@@ -33,7 +33,6 @@ def remaining_balance(amount, annual_interest_rate, payment, months):
     monthly_rate = annual_interest_rate / 100 / 12
     balance = amount
     for m in range(months):
-        # if the payment is not even covering the interest, break out
         if payment <= balance * monthly_rate:
             break
         balance = balance * (1 + monthly_rate) - payment
@@ -147,7 +146,7 @@ if submitted:
         st.sidebar.success(f"Debt '{debt_name}' added!")
 
 # =============================================================================
-# Sidebar: Investment Input Form (unchanged)
+# Sidebar: Investment Input Form (remains unchanged)
 # =============================================================================
 st.sidebar.header("Investment / Savings Details")
 with st.sidebar.form("investment_form", clear_on_submit=True):
@@ -166,7 +165,7 @@ with st.sidebar.form("investment_form", clear_on_submit=True):
         st.sidebar.success(f"Investment '{invest_name}' added!")
 
 # =============================================================================
-# Main Page: Display Debts with an "Edit Debt" Button for Each
+# Main Page: Display Debts in Table Format with an Edit Button per Row
 # =============================================================================
 st.title("Debt vs. Investment Optimization Calculator")
 
@@ -175,29 +174,38 @@ if not st.session_state.debts and not st.session_state.investments:
 else:
     if st.session_state.debts:
         st.subheader("Debts Overview")
-        # For each debt, display its details along with an edit button
+        # Create table header
+        header_cols = st.columns([1, 2, 2, 2, 2, 2, 2])
+        header_cols[0].markdown("**Action**")
+        header_cols[1].markdown("**Debt Name**")
+        header_cols[2].markdown("**Amount Owed**")
+        header_cols[3].markdown("**Interest Rate**")
+        header_cols[4].markdown("**Min Payment**")
+        header_cols[5].markdown("**Current Payment**")
+        header_cols[6].markdown("**Estimated Payoff Date**")
+        
+        # Create a row for each debt
         for i, debt in enumerate(st.session_state.debts):
-            with st.container():
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{debt['Debt Name']}**")
-                    st.write(f"Amount Owed: ${debt['Amount Owed']:,}")
-                    st.write(f"Interest Rate: {debt['Interest Rate']}%")
-                    st.write(f"Minimum Payment: ${debt['Minimum Payment']:,}")
-                    st.write(f"Current Payment: ${debt['Current Payment']:,}")
-                    months = calculate_payoff_months(debt["Amount Owed"], debt["Interest Rate"], debt["Current Payment"])
-                    if months is None:
-                        payoff_date = "Never (Payment too low)"
-                    else:
-                        payoff_date = (datetime.today() + timedelta(days=30 * months)).strftime("%Y-%m")
-                    st.write(f"Estimated Payoff Date: {payoff_date}")
-                with col2:
-                    if st.button("Edit Debt", key=f"edit_debt_{i}"):
-                        st.session_state.editing_debt_index = i
-                        st.rerun()  # Rerun to prepopulate the sidebar form
+            row_cols = st.columns([1, 2, 2, 2, 2, 2, 2])
+            # Edit button on the left
+            if row_cols[0].button("Edit", key=f"edit_debt_{i}"):
+                st.session_state.editing_debt_index = i
+                st.rerun()  # Re-run to load debt info in sidebar form
+            # Display debt details
+            row_cols[1].write(debt["Debt Name"])
+            row_cols[2].write(f"${debt['Amount Owed']:,}")
+            row_cols[3].write(f"{debt['Interest Rate']}%")
+            row_cols[4].write(f"${debt['Minimum Payment']:,}")
+            row_cols[5].write(f"${debt['Current Payment']:,}")
+            months = calculate_payoff_months(debt["Amount Owed"], debt["Interest Rate"], debt["Current Payment"])
+            if months is None:
+                payoff_date = "Never (Payment too low)"
+            else:
+                payoff_date = (datetime.today() + timedelta(days=30 * months)).strftime("%Y-%m")
+            row_cols[6].write(payoff_date)
 
     # =============================================================================
-    # Investments Overview (Editable table remains as before)
+    # Investments Overview (Editable Table)
     # =============================================================================
     if st.session_state.investments:
         st.subheader("Investments / Savings Overview")
@@ -206,7 +214,7 @@ else:
         st.session_state.investments = edited_inv_df.to_dict(orient="records")
 
     # =============================================================================
-    # Net Worth and Strategy Calculation
+    # Net Worth Projection and Strategy Recommendation
     # =============================================================================
     st.subheader("Net Worth Projection")
     horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
