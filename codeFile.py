@@ -55,9 +55,9 @@ def net_worth_over_time(debts, investments, horizon_months):
     """
     Create a DataFrame tracking net worth over time.
 
-    **Modifications:**
-    - The total debt is converted to a negative number so that it shows up as a liability.
-    - Net worth is calculated as Total Investments + (Total Debt), where Total Debt is negative.
+    - Outstanding debt is converted to a negative number so that it appears as a liability.
+    - Net worth is calculated as: Total Investments + (Total Debt)
+      (Remember: Total Debt is negative here.)
     """
     months = list(range(horizon_months + 1))
     net_worth = []
@@ -65,12 +65,11 @@ def net_worth_over_time(debts, investments, horizon_months):
     total_investment_series = []
     
     for m in months:
-        # Calculate the outstanding debt (as a positive number)
         debt_value = sum(
             remaining_balance(debt["Amount Owed"], debt["Interest Rate"], debt["Current Payment"], m)
             for debt in debts
         )
-        # Multiply by -1 so debt appears as a negative value
+        # Display debt as a negative number
         displayed_debt = -debt_value
         total_investment = sum(
             future_value(inv["Current Amount"], inv["Monthly Contribution"], inv["Return Rate"], m)
@@ -78,7 +77,6 @@ def net_worth_over_time(debts, investments, horizon_months):
         )
         total_debt_series.append(displayed_debt)
         total_investment_series.append(total_investment)
-        # Net worth is assets plus liabilities (liabilities are negative)
         net_worth.append(total_investment + displayed_debt)
     
     df = pd.DataFrame({
@@ -258,39 +256,40 @@ else:
             inv_row_cols[4].write(f"{inv['Return Rate']}%")
 
     # =============================================================================
-    # Net Worth Projection and Strategy Recommendation
+    # Net Worth Projection
     # =============================================================================
     st.subheader("Net Worth Projection")
     horizon_months = st.number_input("Projection Horizon (months)", min_value=1, value=60, step=1)
     projection_df = net_worth_over_time(st.session_state.debts, st.session_state.investments, int(horizon_months))
-    
-    # The chart now shows:
-    # - "Total Investments" (assets)
-    # - "Total Debt" (as negative values)
-    # - "Net Worth" (Investments + Debt)
     st.line_chart(projection_df.set_index("Month")[["Net Worth", "Total Debt", "Total Investments"]])
-    
     final_net_worth = projection_df.iloc[-1]["Net Worth"]
     st.write(f"**Projected Net Worth after {horizon_months} months:** ${final_net_worth:,.2f}")
 
-    st.subheader("Strategy Recommendation")
+    # =============================================================================
+    # Optimal Payoff Strategy Recommendation
+    # =============================================================================
+    st.subheader("Optimal Payoff Strategy")
     if st.session_state.debts and st.session_state.investments:
-        highest_debt_interest = max(debt["Interest Rate"] for debt in st.session_state.debts)
+        # Identify the debt with the highest interest rate
+        highest_debt = max(st.session_state.debts, key=lambda x: x["Interest Rate"])
+        highest_debt_interest = highest_debt["Interest Rate"]
         avg_inv_return = np.mean([inv["Return Rate"] for inv in st.session_state.investments])
-        if highest_debt_interest > avg_inv_return:
+        
+        if avg_inv_return > highest_debt_interest:
             st.info(
-                f"Your highest debt interest rate ({highest_debt_interest:.2f}%) exceeds "
-                f"your average investment return ({avg_inv_return:.2f}%). Consider focusing on paying off your debt faster."
+                f"Your average investment return is {avg_inv_return:.2f}% which is higher than your highest debt interest rate ({highest_debt_interest:.2f}%).\n\n"
+                "It might be optimal to pay only the minimum on your debts and direct extra funds toward your investments."
             )
         else:
             st.info(
-                f"Your investment returns ({avg_inv_return:.2f}%) are competitive with your debt interest rates "
-                f"({highest_debt_interest:.2f}%). A balanced approach of investing while meeting debt obligations might be optimal."
+                f"Your highest debt interest rate is {highest_debt_interest:.2f}% which is higher than your average investment return ({avg_inv_return:.2f}%).\n\n"
+                f"Consider focusing extra payments on your '{highest_debt['Debt Name']}' debt to pay it off more quickly before investing further."
             )
     elif st.session_state.debts:
-        st.info("You only have debts. Prioritize debt repayment!")
+        st.info("You only have debts. Prioritize paying them off!")
     elif st.session_state.investments:
         st.info("You only have investments. Continue contributing to your investments!")
+
 
 
 
